@@ -2,3 +2,4 @@
 .env
 .github/
 fly.toml
+images/

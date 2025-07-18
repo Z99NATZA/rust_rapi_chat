@@ -4,6 +4,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::response::Response;
 use axum::Json;
+use axum_extra::extract::multipart::MultipartError;
 use thiserror::Error;
 use serde_json::json;
 
@@ -26,6 +27,12 @@ pub enum AppError {
 
     #[error("NotFound: {0}")]
     NotFound(String),
+
+    #[error("JSON decode error: {0}")]
+    JsonError(#[from] serde_json::Error),
+
+    #[error("Multipart error: {0}")]
+    MultipartError(#[from] MultipartError),
 }
 
 impl IntoResponse for AppError {
@@ -37,6 +44,8 @@ impl IntoResponse for AppError {
             AppError::IoError(e) => (StatusCode::BAD_GATEWAY, e.to_string()),
             AppError::ReqwestError(e) => (StatusCode::BAD_GATEWAY, e.to_string()),
             AppError::NotFound(e) => (StatusCode::NOT_FOUND, e),
+            AppError::JsonError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+            AppError::MultipartError(e) => (StatusCode::BAD_REQUEST, e.to_string()),
         };
 
         let body = Json(json!({

@@ -2,3 +2,4 @@
 target
 **\.env
 fly.toml
+images/

@@ -9,3 +9,4 @@ pub fn chat_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/chat", post(chat::chat))
 }
+ 
