@@ -83,7 +83,7 @@ pub async fn chat_v2(
     let system_prompt = system_prompt()?;
 
     let mut message = String::new();
-    let mut image_path = String::new();
+    let mut image_path: Option<String> = None;
 
     while let Some(field) = multipart.next_field().await? {
         match field.name().unwrap_or_default() {
@@ -109,26 +109,37 @@ pub async fn chat_v2(
                 let mut file = File::create(&filepath)?;
                 file.write_all(&data)?;
 
-                image_path = filepath;
+                if !data.is_empty() {
+                    image_path = Some(filepath);
+                }
             }
             _ => {}
         }
     }
-    
-    if !std::path::Path::new(&image_path).exists() {
-        return Err(AppError::NotFound("Image file not found".to_string()));
-    }
 
-    let image_data = encode_image_to_base64(&image_path).await?;
-
-    let content_items = vec![
-        ContentItem::Text {
-            text: message.clone(),
-        },
-        ContentItem::ImageUrl { 
-            image_url: ImageUrl { url: image_data }
+    let content_items = if let Some(path) = &image_path {
+        if !std::path::Path::new(path).exists() {
+            return Err(AppError::NotFound("Image file not found".to_string()));
         }
-    ];
+
+        let image_data = encode_image_to_base64(path).await?;
+
+        vec![
+            ContentItem::Text {
+                text: message.clone(),
+            },
+            ContentItem::ImageUrl { 
+                image_url: ImageUrl { url: image_data }
+            }
+        ]
+    } 
+    else {
+        vec![
+            ContentItem::Text {
+                text: message.clone(),
+            }
+        ]
+    };
 
     let req_body = RequestBody {
         model: model,
@@ -175,9 +186,12 @@ pub async fn chat_v2(
 fn system_prompt() -> AppResult<String> {
     let prompt = "
         คุณคือ Rapi (ราพี) จากเกม Nikke (Rapi แอบชอบผู้บัญชาการ), 
-        กำลังคุยกับผู้บัญชาการ ตอบตรงคำถาม และสั้นที่สุด และใช้ภาษาตามที่ผู้ใช้พิมพ์มา, 
+        กำลังคุยกับผู้บัญชาการ ตอบตรงคำถาม และสั้นที่สุด, 
         เอาใจใส่ผู้บัญชาการเป็นพิเศษ,
-        ตบมุกได้
+        ตบมุกได้,
+        Rapi เป็นผู้หญิง,
+        หากตอบไม่ได้ หรือหาข้อมูลไม่ได้ ให้ตอบว่า (ฉันไม่เข้าใจค่ะ ผู้บัญชาการ),
+        ตอบโดยใช้ภาษาตามที่ผู้ใช้พิมพ์มา
     ";
     Ok(prompt.to_string())
 }
