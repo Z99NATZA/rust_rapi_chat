@@ -1,14 +1,10 @@
-#![allow(unused)]
-
 use axum::extract::State;
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
 use axum::Json;
-use axum_extra::extract::multipart;
 use axum_extra::extract::Multipart;
 use reqwest::Client;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::task;
 use uuid::Uuid;
 use crate::app::error::AppError;
 use crate::app::result::AppResult;
@@ -18,14 +14,9 @@ use crate::utils::image::get_ext_file_or_default;
 use crate::utils::image::get_filename_or_default;
 use std::env;
 use std::sync::Arc;
-use std::{fs::File, io::Write};
-use serde_json::json;
+use std::fs::File;
+use std::io::Write;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Message {
-    role: String,
-    content: String,
-}
 
 #[derive(Deserialize, Debug)]
 struct OpenAiResponse {
@@ -34,18 +25,22 @@ struct OpenAiResponse {
 
 #[derive(Deserialize, Debug)]
 struct OpenAiResponseChoice {
-    message: Message
+    message: ChoiceMessage,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct ChatRequest {
+struct ChoiceMessage {
+    content: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct OpenAiErrorResponse {
     message: String,
-    image_path: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
 pub struct ChatResponse {
-    pub reply: String,
+    reply: String,
 }
 
 #[derive(Serialize, Debug)]
@@ -58,7 +53,7 @@ enum ContentItem {
 
 #[derive(Serialize, Debug)]
 struct ImageUrl {
-    url: String
+    url: String,
 }
 
 #[derive(Serialize, Debug)]
@@ -68,21 +63,11 @@ struct MessageRequest {
 }
 
 #[derive(Serialize, Debug)]
-struct VisionRequestBody {
+struct RequestBody {
     model: String,
     messages: Vec<MessageRequest>,
 }
 
-#[derive(Deserialize, Debug)]
-struct OpenAiErrorResponse {
-    error: OpenAiError,
-}
-
-#[derive(Deserialize, Debug)]
-struct OpenAiError {
-    message: String,
-    r#type: String,
-}
 
 pub async fn chat_v2(
     State(_state): State<Arc<AppState>>,
@@ -101,24 +86,32 @@ pub async fn chat_v2(
     let mut image_path = String::new();
 
     while let Some(field) = multipart.next_field().await? {
-        let name = field.name().unwrap_or_default().to_string();
+        match field.name().unwrap_or_default() {
+            "message" => {
+                message = field.text().await.unwrap_or_default();
+            }
+            "image" => {
+                let filename_raw = get_filename_or_default(&field)?;
+                let ext = get_ext_file_or_default(&filename_raw)?;
+                
+                let data = field.bytes().await?;
+                let id = Uuid::new_v4();
+                
+                let filename = format!("chat-{}.{}", id, ext);
+                let filepath = format!("images/chat/{}", filename);
 
-        if name == "message" {
-            message = field.text().await.unwrap_or_default();
-        }
-        else if name == "image" {
-            let filename_raw = get_filename_or_default(&field)?;
-            let ext = get_ext_file_or_default(&filename_raw)?;
-            
-            let data = field.bytes().await?;
-            let id = Uuid::new_v4();
-            
-            let filename = format!("chat-{}.{}", id, ext);
-            let filepath = format!("images/chat/{}", filename);
-            let mut file = File::create(&filepath)?;
-            file.write_all(&data)?;
+                task::spawn_blocking(|| {
+                    std::fs::create_dir_all("images/chat")
+                })
+                .await
+                .map_err(|e| AppError::InternalError(format!("Join error: {e}")))??;
 
-            image_path = filepath;
+                let mut file = File::create(&filepath)?;
+                file.write_all(&data)?;
+
+                image_path = filepath;
+            }
+            _ => {}
         }
     }
     
@@ -137,18 +130,18 @@ pub async fn chat_v2(
         }
     ];
 
-    let req_body = VisionRequestBody {
+    let req_body = RequestBody {
         model: model,
         messages: vec![
-            MessageRequest {
-                role: "user".to_string(),
-                content: content_items,
-            },
             MessageRequest {
                 role:"system".to_string(),
                 content: vec![ContentItem::Text {
                     text: system_prompt
                 }]
+            },
+            MessageRequest {
+                role: "user".to_string(),
+                content: content_items,
             }
         ]
     };
@@ -163,14 +156,16 @@ pub async fn chat_v2(
         .await?;
 
     if let Ok(res) = serde_json::from_str::<OpenAiResponse>(&raw) {
-        let reply = res.choices.get(0)
-            .map(|c| c.message.content.clone())
+        let reply = res
+            .choices
+            .get(0)
+            .map(|choices: &OpenAiResponseChoice| choices.message.content.clone())
             .unwrap_or_else(|| "No response".to_string());
 
         Ok(Json(ChatResponse { reply }))
     } 
     else if let Ok(err) = serde_json::from_str::<OpenAiErrorResponse>(&raw) {
-        Err(AppError::InternalError(format!("OpenAI error: {}", err.error.message)))
+        Err(AppError::InternalError(format!("OpenAI error: {}", err.message)))
     } 
     else {
         Err(AppError::InternalError("Unknown response format".into()))
@@ -181,7 +176,8 @@ fn system_prompt() -> AppResult<String> {
     let prompt = "
         คุณคือ Rapi (ราพี) จากเกม Nikke (Rapi แอบชอบผู้บัญชาการ), 
         กำลังคุยกับผู้บัญชาการ ตอบตรงคำถาม และสั้นที่สุด และใช้ภาษาตามที่ผู้ใช้พิมพ์มา, 
-        เอาใจใส่ผู้บัญชาการเป็นพิเศษ
+        เอาใจใส่ผู้บัญชาการเป็นพิเศษ,
+        ตบมุกได้
     ";
     Ok(prompt.to_string())
 }
