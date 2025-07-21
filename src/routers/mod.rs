@@ -14,7 +14,7 @@ pub fn api(state: Arc<AppState>) -> Router {
         .allow_credentials(true);
 
     Router::<Arc<AppState>>::new()
-        .route("/api/chat-v2", post(chat_v2::chat_v2))
+        .route("/api/chat", post(chat_v2::chat_v2))
         .layer(cors)
         .with_state(state)
 } 
