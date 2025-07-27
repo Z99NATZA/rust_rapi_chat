@@ -4,12 +4,12 @@ use axum_extra::extract::Multipart;
 use reqwest::Client;
 use serde::Deserialize;
 use serde::Serialize;
-use tokio::task;
 use uuid::Uuid;
 use crate::app::error::AppError;
 use crate::app::result::AppResult;
 use crate::app::state::AppState;
 use crate::utils::image::encode_image_to_base64;
+use crate::utils::image::ensure_chat_image_dir;
 use crate::utils::image::get_ext_file_or_default;
 use crate::utils::image::get_filename_or_default;
 use std::env;
@@ -68,7 +68,6 @@ struct RequestBody {
     messages: Vec<MessageRequest>,
 }
 
-
 pub async fn chat(
     State(_state): State<Arc<AppState>>,
     mut multipart: Multipart
@@ -84,30 +83,44 @@ pub async fn chat(
 
     let mut message = String::new();
     let mut image_path: Option<String> = None;
+    let mut session_id: Option<String> = None;
+
+    let mut need_create_dir = false;
 
     while let Some(field) = multipart.next_field().await? {
         match field.name().unwrap_or_default() {
             "message" => {
-                message = field.text().await.unwrap_or_default();
+                message = field.text().await.map_err(|e| AppError::BadRequest(format!("Invalid text: {e}")))?;
+            }
+            "session_id" => {
+                session_id = Some(field.text().await.unwrap_or_default());
             }
             "image" => {
+                if !need_create_dir {
+                    ensure_chat_image_dir()?;
+                    need_create_dir = true;
+                }
+
                 let filename_raw = get_filename_or_default(&field)?;
                 let ext = get_ext_file_or_default(&filename_raw)?;
                 
                 let data = field.bytes().await?;
+
+                let kind = infer::get(&data)
+                    .ok_or_else(|| AppError::BadRequest("Unknown file type".into()))?;
+
+                if !kind.mime_type().starts_with("image/") {
+                    return Err(AppError::BadRequest("Uploaded file is not an image".into()));
+                }
+
                 let id = Uuid::new_v4();
-                
                 let filename = format!("chat-{}.{}", id, ext);
                 let filepath = format!("images/chat/{}", filename);
 
-                task::spawn_blocking(|| {
-                    std::fs::create_dir_all("images/chat")
-                })
-                .await
-                .map_err(|e| AppError::InternalError(format!("Join error: {e}")))??;
-
-                let mut file = File::create(&filepath)?;
-                file.write_all(&data)?;
+                let tmp_path = format!("images/chat/.tmp-{}", filename);
+                let mut tmp_file = File::create(&tmp_path)?;
+                tmp_file.write_all(&data)?;
+                tokio::fs::rename(tmp_path, &filepath)?;
 
                 if !data.is_empty() {
                     image_path = Some(filepath);
@@ -117,6 +130,10 @@ pub async fn chat(
         }
     }
 
+    let session_id = session_id.ok_or_else(|| {
+        AppError::BadRequest("Missing session_id".into())
+    })?;
+ 
     let content_items = if let Some(path) = &image_path {
         if !std::path::Path::new(path).exists() {
             return Err(AppError::NotFound("Image file not found".to_string()));

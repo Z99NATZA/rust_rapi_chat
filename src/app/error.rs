@@ -33,6 +33,9 @@ pub enum AppError {
 
     #[error("Multipart error: {0}")]
     MultipartError(#[from] MultipartError),
+    
+    #[error("Bad request: {0}")]
+    BadRequest(String),
 }
 
 impl IntoResponse for AppError {
@@ -46,6 +49,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(e) => (StatusCode::NOT_FOUND, e),
             AppError::JsonError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
             AppError::MultipartError(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            AppError::BadRequest(e) => (StatusCode::BAD_REQUEST, e),
         };
 
         let body = Json(json!({

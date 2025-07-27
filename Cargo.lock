@@ -892,6 +892,7 @@ dependencies = [
  "bytes",
  "dotenv",
  "infer",
+ "once_cell",
  "reqwest",
  "serde",
  "serde_json",

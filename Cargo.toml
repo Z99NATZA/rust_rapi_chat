@@ -28,3 +28,7 @@ features = ["multipart"]
 version = "1.17.0"
 features = ["v4"]
 
+[dependencies.once_cell]
+version = "1"
+features = ["tokio"]
+

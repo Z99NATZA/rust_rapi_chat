@@ -6,6 +6,8 @@ use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use base64::engine::general_purpose;
 use base64::Engine as _;
+use once_cell::sync::OnceCell;
+use std::fs;
 
 use crate::app::error::AppError;
 use crate::app::result::AppResult;
@@ -41,4 +43,15 @@ pub fn get_filename_or_default(field: &Field) -> AppResult<String> {
         .unwrap_or_else(|| "default.jpg".to_string());
 
     Ok(filename)
+}
+
+pub fn ensure_chat_image_dir() -> AppResult<()> {
+    static INIT_CHAT_DIR: OnceCell<()> = OnceCell::new();
+
+    INIT_CHAT_DIR.get_or_try_init(|| {
+        fs::create_dir_all("images/chat")
+            .map_err(AppError::from)
+    })?;
+
+    Ok(())
 }
