@@ -4,18 +4,21 @@ use axum_extra::extract::Multipart;
 use reqwest::Client;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::fs;
 use uuid::Uuid;
 use crate::app::error::AppError;
 use crate::app::result::AppResult;
 use crate::app::state::AppState;
 use crate::utils::image::encode_image_to_base64;
-use crate::utils::image::ensure_chat_image_dir;
+use crate::utils::image::ensure_dir_once;
 use crate::utils::image::get_ext_file_or_default;
 use crate::utils::image::get_filename_or_default;
 use std::env;
 use std::sync::Arc;
 use std::fs::File;
 use std::io::Write;
+use chrono::{DateTime, Utc};
+use std::path::Path;
 
 
 #[derive(Deserialize, Debug)]
@@ -68,6 +71,14 @@ struct RequestBody {
     messages: Vec<MessageRequest>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChatMessage {
+    session_id: String,
+    role: String,
+    content: String,
+    timestamp: DateTime<Utc>,
+}
+
 pub async fn chat(
     State(_state): State<Arc<AppState>>,
     mut multipart: Multipart
@@ -97,7 +108,7 @@ pub async fn chat(
             }
             "image" => {
                 if !need_create_dir {
-                    ensure_chat_image_dir()?;
+                    ensure_dir_once("images/chat")?;
                     need_create_dir = true;
                 }
 
@@ -105,6 +116,10 @@ pub async fn chat(
                 let ext = get_ext_file_or_default(&filename_raw)?;
                 
                 let data = field.bytes().await?;
+
+                if data.is_empty() {
+                    continue;
+                }
 
                 let kind = infer::get(&data)
                     .ok_or_else(|| AppError::BadRequest("Unknown file type".into()))?;
@@ -120,7 +135,7 @@ pub async fn chat(
                 let tmp_path = format!("images/chat/.tmp-{}", filename);
                 let mut tmp_file = File::create(&tmp_path)?;
                 tmp_file.write_all(&data)?;
-                tokio::fs::rename(tmp_path, &filepath)?;
+                tokio::fs::rename(tmp_path, &filepath).await?;
 
                 if !data.is_empty() {
                     image_path = Some(filepath);
@@ -190,6 +205,20 @@ pub async fn chat(
             .map(|choices: &OpenAiResponseChoice| choices.message.content.clone())
             .unwrap_or_else(|| "No response".to_string());
 
+        save_message(ChatMessage {
+            session_id: session_id.clone(),
+            role: "user".to_string(),
+            content: message.clone(),
+            timestamp: Utc::now(),
+        }).await?;
+
+        save_message(ChatMessage {
+            session_id: session_id.clone(),
+            role: "assistant".to_string(),
+            content: reply.clone(),
+            timestamp: Utc::now(),
+        }).await?;
+
         Ok(Json(ChatResponse { reply }))
     } 
     else if let Ok(err) = serde_json::from_str::<OpenAiErrorResponse>(&raw) {
@@ -213,4 +242,26 @@ fn system_prompt() -> AppResult<String> {
         - หากไม่รู้ ให้ตอบว่า 'ไม่ทราบค่ะ' แทน 'ไม่รู้ครับ'
     ";
     Ok(prompt.to_string())
+}
+
+pub async fn save_message(message: ChatMessage) -> AppResult<()> {
+    let dir_path = "data/chat_logs";
+    let file_path = format!("{}/{}.json", dir_path, message.session_id);
+
+    ensure_dir_once(dir_path)?;
+
+    let mut messages: Vec<ChatMessage> = if Path::new(&file_path).exists() {
+        let content = fs::read_to_string(&file_path).await?;
+        serde_json::from_str(&content).unwrap_or_default()
+    }
+    else {
+        Vec::new()
+    };
+
+    messages.push(message);
+
+    let json = serde_json::to_string_pretty(&messages)?;
+    fs::write(&file_path, json).await?;
+
+    Ok(())
 }

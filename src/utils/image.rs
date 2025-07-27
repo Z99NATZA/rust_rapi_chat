@@ -1,16 +1,20 @@
 #![allow(dead_code)]
 
 use axum_extra::extract::multipart::Field;
+use dashmap::DashSet;
 use infer;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use base64::engine::general_purpose;
 use base64::Engine as _;
-use once_cell::sync::OnceCell;
+use uuid::Uuid;
 use std::fs;
+use std::sync::OnceLock;
 
 use crate::app::error::AppError;
 use crate::app::result::AppResult;
+
+static INIT_DIRS: OnceLock<DashSet<String>> = OnceLock::new();
 
 pub async fn encode_image_to_base64(path: &str) -> AppResult<String> {
     let mut file = File::open(path).await?;
@@ -46,13 +50,15 @@ pub fn get_filename_or_default(field: &Field) -> AppResult<String> {
     Ok(filename)
 }
 
-pub fn ensure_chat_image_dir() -> AppResult<()> {
-    static INIT_CHAT_DIR: OnceCell<()> = OnceCell::new();
+pub fn ensure_dir_once(dir_path: &str) -> AppResult<()> {
+    let dirs = INIT_DIRS.get_or_init(DashSet::new);
 
-    INIT_CHAT_DIR.get_or_try_init(|| {
-        fs::create_dir_all("images/chat")
-            .map_err(AppError::from)
-    })?;
+    // [check ว่าเคยสร้างแล้วหรือยัง]
+    if dirs.insert(dir_path.to_string()) {
+        // [ยังไม่เคย][สร้างเลย]
+        fs::create_dir_all(dir_path)
+            .map_err(AppError::from)?;
+    }
 
     Ok(())
 }

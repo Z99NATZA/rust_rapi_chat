@@ -3,3 +3,4 @@
 .github/
 fly.toml
 images/
+data/chat_logs/
