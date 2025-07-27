@@ -38,9 +38,10 @@ pub fn get_ext_file_or_default(filename: &str) -> AppResult<String> {
 }
 
 pub fn get_filename_or_default(field: &Field) -> AppResult<String> {
-    let filename = field.file_name()
-        .map(|s| s.to_owned())
-        .unwrap_or_else(|| "default.jpg".to_string());
+    let filename = match field.file_name() {
+        Some(name) => name.to_owned(),
+        None => format!("{}.jpg", Uuid::new_v4()),
+    };
 
     Ok(filename)
 }
