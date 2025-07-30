@@ -9,10 +9,13 @@ use uuid::Uuid;
 use crate::app::error::AppError;
 use crate::app::result::AppResult;
 use crate::app::state::AppState;
+use crate::utils::embedding::create_embedding;
 use crate::utils::image::encode_image_to_base64;
 use crate::utils::image::ensure_dir_once;
 use crate::utils::image::get_ext_file_or_default;
 use crate::utils::image::get_filename_or_default;
+use crate::utils::qdrant::search_context_from_qdrant;
+use crate::utils::qdrant::store_message_to_qdrant;
 use std::env;
 use std::sync::Arc;
 use std::fs::File;
@@ -80,7 +83,7 @@ pub struct ChatMessage {
 }
 
 pub async fn chat(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     mut multipart: Multipart
 ) -> AppResult<Json<ChatResponse>> {
     if cfg!(debug_assertions) {
@@ -101,7 +104,9 @@ pub async fn chat(
     while let Some(field) = multipart.next_field().await? {
         match field.name().unwrap_or_default() {
             "message" => {
-                message = field.text().await.map_err(|e| AppError::BadRequest(format!("Invalid text: {e}")))?;
+                message = field.text().await.map_err(
+                    |e| AppError::BadRequest(format!("Invalid text: {e}"))
+                )?;
             }
             "session_id" => {
                 session_id = Some(field.text().await.unwrap_or_default());
@@ -173,13 +178,22 @@ pub async fn chat(
         ]
     };
 
+    let query_embedding = create_embedding(&api_key, &message).await?;
+    let context = search_context_from_qdrant(&state.qdrant_client, &session_id, query_embedding).await?;
+    let context_text = if !context.is_empty() {
+        context.join("\n")
+    }
+    else {
+        "".to_string()
+    };
+
     let req_body = RequestBody {
         model: model,
         messages: vec![
             MessageRequest {
-                role:"system".to_string(),
-                content: vec![ContentItem::Text {
-                    text: system_prompt
+                role: "system".to_string(),
+                content: vec![ContentItem::Text { 
+                    text: format!("{}/n{}", system_prompt, context_text)
                 }]
             },
             MessageRequest {
@@ -189,9 +203,25 @@ pub async fn chat(
         ]
     };
 
+    // let req_body = RequestBody {
+    //     model: model,
+    //     messages: vec![
+    //         MessageRequest {
+    //             role:"system".to_string(),
+    //             content: vec![ContentItem::Text {
+    //                 text: system_prompt
+    //             }]
+    //         },
+    //         MessageRequest {
+    //             role: "user".to_string(),
+    //             content: content_items,
+    //         }
+    //     ]
+    // };
+
     let raw = client
         .post("https://api.openai.com/v1/chat/completions")
-        .bearer_auth(api_key)
+        .bearer_auth(api_key.clone())
         .json(&req_body)
         .send()
         .await?
@@ -205,6 +235,7 @@ pub async fn chat(
             .map(|choices: &OpenAiResponseChoice| choices.message.content.clone())
             .unwrap_or_else(|| "No response".to_string());
 
+        // [user: message]
         save_message(ChatMessage {
             session_id: session_id.clone(),
             role: "user".to_string(),
@@ -212,12 +243,35 @@ pub async fn chat(
             timestamp: Utc::now(),
         }).await?;
 
+        // [user: embedding]
+        let user_embedding = create_embedding(&api_key, &message).await?;
+        store_message_to_qdrant(
+            &state.qdrant_client, 
+            &session_id,
+            "user",
+            &message,
+            user_embedding,
+            Utc::now().timestamp(),
+        ).await?;
+
+        // [assistant: message]
         save_message(ChatMessage {
             session_id: session_id.clone(),
             role: "assistant".to_string(),
             content: reply.clone(),
             timestamp: Utc::now(),
         }).await?;
+
+        // [assistant: embedding]
+        let assistant_embedding = create_embedding(&api_key, &message).await?;
+        store_message_to_qdrant(
+            &state.qdrant_client, 
+            &session_id,
+            "assistant",
+            &reply,
+            assistant_embedding,
+            Utc::now().timestamp(),
+        ).await?;
 
         Ok(Json(ChatResponse { reply }))
     } 
@@ -264,4 +318,4 @@ pub async fn save_message(message: ChatMessage) -> AppResult<()> {
     fs::write(&file_path, json).await?;
 
     Ok(())
-}
+} 

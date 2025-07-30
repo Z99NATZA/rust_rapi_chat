@@ -36,6 +36,9 @@ pub enum AppError {
     
     #[error("Bad request: {0}")]
     BadRequest(String),
+
+    #[error("Qdrant connection error: {0}")]
+    QdrantError(String),
 }
 
 impl IntoResponse for AppError {
@@ -50,6 +53,7 @@ impl IntoResponse for AppError {
             AppError::JsonError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
             AppError::MultipartError(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             AppError::BadRequest(e) => (StatusCode::BAD_REQUEST, e),
+            AppError::QdrantError(e) => (StatusCode::BAD_GATEWAY, e.to_string()),
         };
 
         let body = Json(json!({

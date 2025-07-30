@@ -13,6 +13,7 @@ base64 = "0.22"
 infer = "0.19"
 once_cell = "1"
 dashmap = "6.1.0"
+qdrant-client = "1.8.0"
 
 [dependencies.tokio]
 version = "1"
