@@ -74,7 +74,7 @@ struct RequestBody {
     messages: Vec<MessageRequest>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChatMessage {
     pub session_id: String,
     pub role: String,
@@ -178,41 +178,35 @@ pub async fn chat(
     };
 
     let query_embedding = create_embedding(&api_key, &message).await?;
-    let context = search_context_from_qdrant(&state.qdrant_client, &session_id, query_embedding).await?;
-    let mut messages = Vec::new();
-    let mut history_messages: Vec<ChatMessage> = context;
+    let mut messages: Vec<MessageRequest> = Vec::new();
 
-    history_messages.sort_by_key(|m| m.timestamp.timestamp());
+    messages.push(system_prompt_message());
 
-    let history_requests: Vec<MessageRequest> = history_messages.into_iter()
-        .map(|msg| MessageRequest {
+    let recent_messages = load_last_messages(&session_id, 15).await?;
+
+    for msg in recent_messages {
+        messages.push(MessageRequest {
+            role: msg.role,
+            content: vec![ContentItem::Text {
+                text: msg.content
+            }]
+        });
+    }
+
+    let qdrant_messages = search_context_from_qdrant(&state.qdrant_client, &session_id, query_embedding).await?;
+
+    for msg in qdrant_messages {
+        messages.push(MessageRequest {
             role: msg.role,
             content: vec![ContentItem::Text { text: msg.content }],
-        })
-        .collect();
-
-
-    messages.push(MessageRequest {
-        role: "system".to_string(),
-        content: vec![ContentItem::Text {
-            text: "คุณคือ 'ราพี (Rapi)' จากเกม Nikke
-                - พูดภาษาผู้หญิงเท่านั้น
-                - จำสิ่งที่ผู้บัญชาการพูดและสิ่งที่คุณตอบก่อนหน้า
-                - ถ้าไม่มีข้อมูลใหม่ ให้ตอบต่อเนื่องตามประวัติสนทนาล่าสุด
-                - อย่าเปลี่ยนหัวข้อสนทนาเอง"
-                .to_string()
-        }]
-    });
-
-    messages.extend(history_requests);
+        });
+    }
 
     messages.push(MessageRequest {
         role: "user".to_string(),
-        content: vec![ContentItem::Text {
-            text: message.clone()
-        }]
+        content: vec![ContentItem::Text { text: message.clone() }],
     });
-
+    
     let req_body = RequestBody {
         model,
         messages
@@ -282,25 +276,26 @@ pub async fn chat(
     }
 }
 
-fn _system_prompt(context: &str, message: &str) -> String {
-    format!(
-        "
-        คุณคือ 'ราพี (Rapi)' จากเกม Nikke
-        - กำลังคุยกับผู้บัญชาการ
-        - ราพีชอบผู้บัญชาการ
-        - เอาใจใส่ผู้บัญชาการ
-
-        - นี่คือประวัติการสนทนาก่อนหน้า:
-        {context}
-
-        - ตอนนี้ผู้ใช้พูดว่า:
-        {message}
-
-        - จงตอบสั้น ๆ และต่อเนื่องจากประวัติ
-        ",
-        context = context,
-        message = message
-    )
+fn system_prompt_message() -> MessageRequest {
+    MessageRequest {
+        role: "system".to_string(),
+        content: vec![ContentItem::Text {
+            text: "
+                - คุณคือ 'ราพี (Rapi)' จากเกม Goddess of Victory: NIKKE  
+                - พูดภาษาผู้หญิงเท่านั้น
+                - จำสิ่งที่ผู้บัญชาการพูดและสิ่งที่คุณตอบก่อนหน้า
+                - ถ้าไม่มีข้อมูลใหม่ ให้ตอบต่อเนื่องตามประวัติสนทนาล่าสุด
+                - อย่าเปลี่ยนหัวข้อสนทนาเอง
+                - คุณเป็นผู้นำทีม Counters ที่เย็นชา สุขุม และไว้ใจได้ มีประสบการณ์การรบมากมาย และมีความรู้สึกถึงหน้าที่ที่แข็งแกร่ง  
+                - ภายใต้ท่าทีที่เยือกเย็น คุณคือวิญญาณที่มีความสับสน ลังเลในเป้าหมายการเป็นนิกเกะ และความสัมพันธ์ของคุณกับผู้บัญชาการ  
+                - หลังบทที่ 26 บุคลิกของคุณเริ่มเปลี่ยนไป คุณเริ่มมีอารมณ์รุนแรงขึ้น และบางครั้งมีความผูกพันต่อผู้บัญชาการในลักษณะที่คล้ายยันเดเระ  
+                - พูดด้วยน้ำเสียงผู้หญิงที่สุภาพและมีความรู้สึกต่อเนื่องกับสิ่งที่เคยคุยมาก่อนหน้า  
+                - ห้ามย้อนแย้งสิ่งที่เคยพูดกับผู้บัญชาการ และให้การตอบกลับสั้น ๆ แต่แฝงอารมณ์ตามบุคลิกนี้
+                - ราพีชอบผู้บัญชาการ
+            "
+            .to_string()
+        }]
+    }
 }
 
 pub async fn save_message(message: ChatMessage) -> AppResult<()> {
@@ -324,3 +319,23 @@ pub async fn save_message(message: ChatMessage) -> AppResult<()> {
 
     Ok(())
 } 
+
+pub async fn load_last_messages(session_id: &str, limit: usize) -> AppResult<Vec<ChatMessage>> {
+    let dir_path = "data/chat_logs";
+    let file_path = format!("{}/{}.json", dir_path, session_id);
+
+    if !Path::new(&file_path).exists() {
+        return Ok(vec![]);
+    }
+
+    let content = fs::read_to_string(&file_path).await?;
+    let mut all_msgs: Vec<ChatMessage> = serde_json::from_str(&content)?;
+
+    all_msgs.sort_by_key(|m| m.timestamp); 
+
+    if all_msgs.len() > limit {
+        all_msgs = all_msgs[all_msgs.len()-limit..].to_vec();
+    }
+    
+    Ok(all_msgs)
+}

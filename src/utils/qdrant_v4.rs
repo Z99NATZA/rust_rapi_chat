@@ -97,7 +97,7 @@ pub async fn search_context_from_qdrant(
     let history = res.result.into_iter()
         .filter_map(|point| {
             let ts = point.payload.get("timestamp")?;
-            let timestamp: i64 = ts.clone().try_into().ok()?; // ✅ ใช้ try_into()
+            let timestamp: i64 = ts.clone().try_into().ok()?;
             Some(ChatMessage {
                 session_id: point.payload.get("session_id")?.as_str()?.to_string(),
                 role: point.payload.get("role")?.as_str()?.to_string(),
