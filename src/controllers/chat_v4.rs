@@ -152,30 +152,6 @@ pub async fn chat(
     let session_id = session_id.ok_or_else(|| {
         AppError::BadRequest("Missing session_id".into())
     })?;
- 
-    let _content_items = if let Some(path) = &image_path {
-        if !std::path::Path::new(path).exists() {
-            return Err(AppError::NotFound("Image file not found".to_string()));
-        }
-
-        let image_data = encode_image_to_base64(path).await?;
-
-        vec![
-            ContentItem::Text {
-                text: message.clone(),
-            },
-            ContentItem::ImageUrl { 
-                image_url: ImageUrl { url: image_data }
-            }
-        ]
-    } 
-    else {
-        vec![
-            ContentItem::Text {
-                text: message.clone(),
-            }
-        ]
-    };
 
     let query_embedding = create_embedding(&api_key, &message).await?;
     let mut messages: Vec<MessageRequest> = Vec::new();
@@ -205,6 +181,24 @@ pub async fn chat(
     messages.push(MessageRequest {
         role: "user".to_string(),
         content: vec![ContentItem::Text { text: message.clone() }],
+    });
+
+    let mut user_content = vec![ContentItem::Text {
+        text: message.clone()
+    }];
+
+    if let Some(path) = &image_path {
+        if Path::new(path).exists() {
+            let image_data = encode_image_to_base64(path).await?;
+            user_content.push(ContentItem::ImageUrl {
+                image_url: ImageUrl { url: image_data }
+            });
+        }
+    }
+
+    messages.push(MessageRequest {
+        role: "user".to_string(),
+        content: user_content
     });
     
     let req_body = RequestBody {
@@ -336,6 +330,6 @@ pub async fn load_last_messages(session_id: &str, limit: usize) -> AppResult<Vec
     if all_msgs.len() > limit {
         all_msgs = all_msgs[all_msgs.len()-limit..].to_vec();
     }
-    
+
     Ok(all_msgs)
 }
