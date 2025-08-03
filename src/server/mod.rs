@@ -7,7 +7,7 @@ use crate::app::error::AppError;
 use crate::app::result::AppResult;
 use crate::app::state::AppState;
 use crate::routers::api;
-use crate::utils::qdrant::ensure_collection;
+use crate::utils::qdrant_v4::ensure_collection;
 
 pub async fn run() -> AppResult<()> {
     if cfg!(debug_assertions) {

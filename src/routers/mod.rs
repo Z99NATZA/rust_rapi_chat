@@ -3,7 +3,7 @@ use tower_http::cors::CorsLayer;
 use std::sync::Arc;
 use crate::app::state::AppState;
 use axum::routing::{post};
-use crate::controllers::chat_v3;
+use crate::controllers::chat_v4;
 
 pub fn api(state: Arc<AppState>) -> Router {
     let cors = CorsLayer::new()
@@ -14,7 +14,7 @@ pub fn api(state: Arc<AppState>) -> Router {
         .allow_credentials(true);
 
     Router::<Arc<AppState>>::new()
-        .route("/api/chat", post(chat_v3::chat))
+        .route("/api/chat", post(chat_v4::chat))
         .layer(cors)
         .with_state(state)
 } 

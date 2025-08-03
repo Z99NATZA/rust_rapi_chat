@@ -1,3 +1,3 @@
 pub mod image;
 pub mod embedding;
-pub mod qdrant;
+pub mod qdrant_v4;
