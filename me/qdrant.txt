@@ -1,0 +1,1 @@
+docker run -p port:6333 -p port+1:6334 qdrant/qdrant

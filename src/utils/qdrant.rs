@@ -22,7 +22,7 @@ pub async fn ensure_collection(client: &Qdrant) -> AppResult<()> {
             vectors_config: Some(VectorsConfig {
                 config: Some(qdrant_client::qdrant::vectors_config::Config::Params(
                     VectorParams {
-                        size: 1536, // ขนาด embedding model
+                        size: 1536, // [ขนาด embedding model]
                         distance: Distance::Cosine.into(),
                         datatype: Some(Datatype::Float32 as i32),
                         hnsw_config: Some(HnswConfigDiff::default()),
@@ -97,12 +97,12 @@ pub async fn search_context_from_qdrant(
 
     let history = res.result.into_iter()
         .filter_map(|point| {
-            point.payload
-                .get("content")
-                .and_then(|c| c.as_str())
-                .map(|s| s.to_string())
+            let role = point.payload.get("role")?.as_str()?;
+            let content = point.payload.get("content")?.as_str()?;
+            Some(format!("{}: {}", role, content))
         })
-        .collect();
+        .collect::<Vec<String>>();
+
 
     Ok(history)
 }

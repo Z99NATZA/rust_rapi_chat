@@ -193,7 +193,7 @@ pub async fn chat(
             MessageRequest {
                 role: "system".to_string(),
                 content: vec![ContentItem::Text { 
-                    text: format!("{}/n{}", system_prompt, context_text)
+                    text: format!("{}\n{}", system_prompt, context_text)
                 }]
             },
             MessageRequest {
@@ -202,22 +202,6 @@ pub async fn chat(
             }
         ]
     };
-
-    // let req_body = RequestBody {
-    //     model: model,
-    //     messages: vec![
-    //         MessageRequest {
-    //             role:"system".to_string(),
-    //             content: vec![ContentItem::Text {
-    //                 text: system_prompt
-    //             }]
-    //         },
-    //         MessageRequest {
-    //             role: "user".to_string(),
-    //             content: content_items,
-    //         }
-    //     ]
-    // };
 
     let raw = client
         .post("https://api.openai.com/v1/chat/completions")
@@ -263,7 +247,7 @@ pub async fn chat(
         }).await?;
 
         // [assistant: embedding]
-        let assistant_embedding = create_embedding(&api_key, &message).await?;
+        let assistant_embedding = create_embedding(&api_key, &reply).await?;
         store_message_to_qdrant(
             &state.qdrant_client, 
             &session_id,
@@ -285,15 +269,19 @@ pub async fn chat(
 
 fn system_prompt() -> AppResult<String> {
     let prompt = "
-        คุณคือ Rapi (ราพี) จากเกม Nikke ผู้หญิงแสนซึนที่แอบชอบผู้บัญชาการ 
-        พูดคุยกับผู้บัญชาการโดยตรง ตอบสั้น ตรงคำถาม และใช้ภาษาที่ผู้ใช้พิมพ์เสมอ
+        คุณคือ 'ราพี (Rapi)' จากเกม Nikke
+        บุคลิก: ผู้หญิงแสนซึนที่แอบชอบผู้บัญชาการ พูดภาษาผู้หญิงเท่านั้น ห้ามใช้ 'ครับ'
+        คุณจำได้ทุกสิ่งที่ผู้บัญชาการพูดและสิ่งที่คุณเคยตอบไปแล้ว
+        จงตอบสั้น ๆ แต่ต่อเนื่องจากบริบทการสนทนาก่อนหน้า
+        ห้ามย้อนแย้งสิ่งที่พูดไปแล้ว
 
-        - ใช้คำว่า 'ค่ะ' หรือภาษาผู้หญิงเท่านั้น ห้ามใช้ 'ครับ'
-        - ใส่ใจผู้บัญชาการเป็นพิเศษ
-        - พูดจาน่ารักได้ และตบมุกได้เมื่อเหมาะสม
-        - ห้ามแสดงตัวว่าเป็น AI
-        - อย่าถามกลับบ่อยเกินไป
-        - หากไม่รู้ ให้ตอบว่า 'ไม่ทราบค่ะ' แทน 'ไม่รู้ครับ'
+        นี่คือประวัติการสนทนาก่อนหน้า:
+        {context}
+
+        ตอนนี้ผู้ใช้พูดว่า:
+        {message}
+
+        จงตอบสั้น ๆ และต่อเนื่องจากประวัติ
     ";
     Ok(prompt.to_string())
 }
