@@ -1,3 +1,5 @@
+// [แชทแบบต่อเนื่อง จำบทก่อนหน้าได้]
+
 use axum::extract::State;
 use axum::Json;
 use axum_extra::extract::Multipart;
@@ -14,8 +16,10 @@ use crate::utils::image::encode_image_to_base64;
 use crate::utils::image::ensure_dir_once;
 use crate::utils::image::get_ext_file_or_default;
 use crate::utils::image::get_filename_or_default;
+use crate::utils::log::save_prompt_log;
 use crate::utils::qdrant_v5::search_context_from_qdrant;
 use crate::utils::qdrant_v5::store_message_to_qdrant;
+use crate::utils::summarizer::summarize_history;
 use std::env;
 use std::sync::Arc;
 use std::fs::File;
@@ -63,7 +67,7 @@ struct ImageUrl {
 }
 
 #[derive(Serialize, Debug)]
-struct MessageRequest {
+pub struct MessageRequest {
     role: String,
     content: Vec<ContentItem>,
 }
@@ -151,15 +155,35 @@ pub async fn chat(
 
     messages.push(system_prompt_message());
 
-    let recent_messages = load_last_messages(&session_id, 15).await?;
+    let full_messages = load_full_messages(&session_id).await?;
 
-    for msg in recent_messages {
+    if full_messages.len() > 50 {
+        let summary = summarize_history(&session_id, &state.qdrant_client, &api_key, &model).await?;
+
+        let summary_prompt = format!(
+            "ก่อนหน้านี้มีบทสนทนาเยอะ จึงมีการสรุปไว้ดังนี้:\n{}\nกรุณาใช้บริบทนี้ในการตอบ",
+            summary
+        );
+
         messages.push(MessageRequest {
-            role: msg.role,
-            content: vec![ContentItem::Text {
-                text: msg.content
-            }]
+            role: "system".to_string(),
+            content: vec![ContentItem::Text { text: summary_prompt }]
         });
+
+        let recent_messages = load_last_messages(&session_id, 15).await?;
+        for msg in recent_messages {
+            messages.push(MessageRequest {
+                role: msg.role,
+                content: vec![ContentItem::Text { text: msg.content }],
+            });
+        }
+    } else {
+        for msg in full_messages {
+            messages.push(MessageRequest {
+                role: msg.role,
+                content: vec![ContentItem::Text { text: msg.content }],
+            });
+        }
     }
 
     let qdrant_messages = search_context_from_qdrant(&state.qdrant_client, &session_id, query_embedding).await?;
@@ -193,6 +217,8 @@ pub async fn chat(
         role: "user".to_string(),
         content: user_content
     });
+
+    save_prompt_log(&session_id, &messages).await?;
     
     let req_body = RequestBody {
         model,
@@ -325,4 +351,17 @@ pub async fn load_last_messages(session_id: &str, limit: usize) -> AppResult<Vec
     }
 
     Ok(all_msgs)
+}
+
+pub async fn load_full_messages(session_id: &str) -> AppResult<Vec<ChatMessage>> {
+    let file_path = format!("data/chat_logs/{}.json", session_id);
+
+    if !Path::new(&file_path).exists() {
+        return Ok(vec![]);
+    }
+
+    let content = fs::read_to_string(&file_path).await?;
+    let messages: Vec<ChatMessage> = serde_json::from_str(&content)?;
+
+    Ok(messages)
 }
