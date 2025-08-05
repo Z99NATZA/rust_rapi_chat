@@ -7,7 +7,8 @@ use crate::app::error::AppError;
 use crate::app::result::AppResult;
 use crate::app::state::AppState;
 use crate::routers::api;
-use crate::utils::qdrant_v4::ensure_collection;
+use crate::utils::image::ensure_dir_once;
+use crate::utils::qdrant_v5::ensure_collection;
 
 pub async fn run() -> AppResult<()> {
     if cfg!(debug_assertions) {
@@ -21,10 +22,13 @@ pub async fn run() -> AppResult<()> {
     ensure_collection(&qdrant_client)
         .await
         .map_err(|e| AppError::QdrantError(format!("Failed to create collection: {}", e)))?;
+
+    ensure_dir_once("images/chat")?;
     
     let state = Arc::new(AppState {
         qdrant_client,
     });
+
     let app = api(state);
     let host = env::var("HOST")?;
     let port = env::var("PORT")?;

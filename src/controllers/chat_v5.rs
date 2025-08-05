@@ -98,8 +98,6 @@ pub async fn chat(
     let mut image_path: Option<String> = None;
     let mut session_id: Option<String> = None;
 
-    let mut need_create_dir = false;
-
     while let Some(field) = multipart.next_field().await? {
         match field.name().unwrap_or_default() {
             "message" => {
@@ -111,11 +109,6 @@ pub async fn chat(
                 session_id = Some(field.text().await.unwrap_or_default());
             }
             "image" => {
-                if !need_create_dir {
-                    ensure_dir_once("images/chat")?;
-                    need_create_dir = true;
-                }
-
                 let filename_raw = get_filename_or_default(&field)?;
                 let ext = get_ext_file_or_default(&filename_raw)?;
                 
