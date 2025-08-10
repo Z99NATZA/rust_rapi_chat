@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
 use chrono::Utc;
 
-use crate::{app::result::AppResult, controllers::chat_v5::MessageRequest, utils::image::ensure_dir_once};
+use crate::{app::result::AppResult, controllers::chat::MessageRequest, utils::image::ensure_dir_once};
 
 pub async fn save_prompt_log(session_id: &str, messages: &Vec<MessageRequest>) -> AppResult<()> {
     let path = format!("logs/request_{}-{}.json", session_id, Utc::now().timestamp());

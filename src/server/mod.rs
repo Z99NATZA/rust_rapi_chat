@@ -8,7 +8,7 @@ use crate::app::result::AppResult;
 use crate::app::state::AppState;
 use crate::routers::api;
 use crate::utils::image::ensure_dir_once;
-use crate::utils::qdrant_v5::ensure_collection;
+use crate::utils::qdrant::ensure_collection;
 
 pub async fn run() -> AppResult<()> {
     if cfg!(debug_assertions) {

@@ -1,1 +1,1 @@
-pub mod chat_v5;
+pub mod chat;

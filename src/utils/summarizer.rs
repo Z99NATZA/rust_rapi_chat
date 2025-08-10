@@ -2,8 +2,8 @@
 
 use crate::app::result::AppResult;
 use crate::utils::embedding::create_embedding;
-use crate::utils::qdrant_v5::store_message_to_qdrant;
-use crate::controllers::chat_v5::ChatMessage;
+use crate::utils::qdrant::store_message_to_qdrant;
+use crate::controllers::chat::ChatMessage;
 
 use std::env;
 use chrono::Utc;

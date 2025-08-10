@@ -3,7 +3,7 @@ use qdrant_client::Qdrant;
 use uuid::Uuid;
 use crate::app::error::AppError;
 use crate::app::result::AppResult;
-use crate::controllers::chat_v5::ChatMessage;
+use crate::controllers::chat::ChatMessage;
 use serde_json::json;
 use qdrant_client::qdrant::{SearchPoints, Filter, Condition};
 
