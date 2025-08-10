@@ -1,6 +1,4 @@
-// [ต่อจาก chat_v5]
-// [ปรับปรุง performance]
-// [ทำ background job]
+// [แชทแบบต่อเนื่อง จำบทก่อนหน้าได้]
 
 use axum::extract::State;
 use axum::Json;
@@ -146,9 +144,9 @@ pub async fn chat(
         AppError::BadRequest("Missing session_id".into())
     })?;
 
-    let user_embedding = create_embedding(api_key, &message).await?;
-
+    let query_embedding = create_embedding(&api_key, &message).await?;
     let mut messages: Vec<MessageRequest> = Vec::new();
+
     messages.push(system_prompt_message());
 
     let full_messages = load_full_messages(&session_id).await?;
@@ -182,11 +180,7 @@ pub async fn chat(
         }
     }
 
-    let qdrant_messages = search_context_from_qdrant(
-        &state.qdrant_client,
-        &session_id,
-        user_embedding.clone()
-    ).await?;
+    let qdrant_messages = search_context_from_qdrant(&state.qdrant_client, &session_id, query_embedding).await?;
 
     for msg in qdrant_messages {
         messages.push(MessageRequest {
@@ -230,60 +224,49 @@ pub async fn chat(
         .await?;
 
     if let Ok(res) = serde_json::from_str::<OpenAiResponse>(&raw) {
-        let reply = res.choices.get(0)
+        let reply = res
+            .choices
+            .get(0)
             .map(|choices: &OpenAiResponseChoice| choices.message.content.clone())
             .unwrap_or_else(|| "No response".to_string());
 
-        // ========= BACKGROUND JOB =========
-        // เขียนไฟล์ + upsert Qdrant แบบไม่บล็อกการตอบ
-        {
-            let state = state.clone();
-            let session_id_bg = session_id.clone();
-            let message_bg = message.clone();
-            let reply_bg = reply.clone();
-            let user_embedding_bg = user_embedding.clone();
+        // [user: message]
+        save_message(ChatMessage {
+            session_id: session_id.clone(),
+            role: "user".to_string(),
+            content: message.clone(),
+            timestamp: Utc::now(),
+        }).await?;
 
-            tokio::spawn(async move {
-                // [user: message] -> log file
-                let _ = save_message(ChatMessage {
-                    session_id: session_id_bg.clone(),
-                    role: "user".to_string(),
-                    content: message_bg.clone(),
-                    timestamp: Utc::now(),
-                }).await;
+        // [user: embedding]
+        let user_embedding = create_embedding(&api_key, &message).await?;
+        store_message_to_qdrant(
+            &state.qdrant_client, 
+            &session_id,
+            "user",
+            &message,
+            user_embedding,
+            Utc::now().timestamp(),
+        ).await?;
 
-                // [user: embedding] -> Qdrant (ใช้ embedding ที่คำนวณแล้ว)
-                let _ = store_message_to_qdrant(
-                    &state.qdrant_client,
-                    &session_id_bg,
-                    "user",
-                    &message_bg,
-                    user_embedding_bg,
-                    Utc::now().timestamp(),
-                ).await;
+        // [assistant: message]
+        save_message(ChatMessage {
+            session_id: session_id.clone(),
+            role: "assistant".to_string(),
+            content: reply.clone(),
+            timestamp: Utc::now(),
+        }).await?;
 
-                // [assistant: message] -> log file
-                let _ = save_message(ChatMessage {
-                    session_id: session_id_bg.clone(),
-                    role: "assistant".to_string(),
-                    content: reply_bg.clone(),
-                    timestamp: Utc::now(),
-                }).await;
-
-                // [assistant: embedding] -> Qdrant
-                if let Ok(assistant_embedding) = create_embedding(&state.openai_key, &reply_bg).await {
-                    let _ = store_message_to_qdrant(
-                        &state.qdrant_client,
-                        &session_id_bg,
-                        "assistant",
-                        &reply_bg,
-                        assistant_embedding,
-                        Utc::now().timestamp(),
-                    ).await;
-                }
-            });
-        }
-        // ========= END BACKGROUND =========
+        // [assistant: embedding]
+        let assistant_embedding = create_embedding(&api_key, &reply).await?;
+        store_message_to_qdrant(
+            &state.qdrant_client, 
+            &session_id,
+            "assistant",
+            &reply,
+            assistant_embedding,
+            Utc::now().timestamp(),
+        ).await?;
 
         Ok(Json(ChatResponse { reply }))
     } 
