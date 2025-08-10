@@ -42,7 +42,6 @@ pub async fn ensure_collection(client: &Qdrant) -> AppResult<()> {
     Ok(())
 }
 
-
 pub async fn store_message_to_qdrant(
     client: &Qdrant,
     session_id: &str,
@@ -106,7 +105,6 @@ pub async fn search_context_from_qdrant(
             })
         })
         .collect();
-
 
     Ok(history)
 }

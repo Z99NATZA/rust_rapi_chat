@@ -2,6 +2,7 @@ use std::env;
 use std::sync::Arc;
 
 use qdrant_client::Qdrant;
+use reqwest::Client;
 
 use crate::app::error::AppError;
 use crate::app::result::AppResult;
@@ -24,9 +25,16 @@ pub async fn run() -> AppResult<()> {
         .map_err(|e| AppError::QdrantError(format!("Failed to create collection: {}", e)))?;
 
     ensure_dir_once("images/chat")?;
+
+    let openai_key = env::var("OPENAI_API_KEY")?;
+    let openai_model = env::var("OPENAI_MODEL")?;
+    let client = Client::new();
     
     let state = Arc::new(AppState {
         qdrant_client,
+        http: client,
+        openai_key,
+        openai_model
     });
 
     let app = api(state);

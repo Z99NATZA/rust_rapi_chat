@@ -3,7 +3,6 @@
 use axum::extract::State;
 use axum::Json;
 use axum_extra::extract::Multipart;
-use reqwest::Client;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::fs;
@@ -20,7 +19,6 @@ use crate::utils::image::get_filename_or_default;
 use crate::utils::qdrant::search_context_from_qdrant;
 use crate::utils::qdrant::store_message_to_qdrant;
 use crate::utils::summarizer::summarize_history;
-use std::env;
 use std::sync::Arc;
 use std::fs::File;
 use std::io::Write;
@@ -90,13 +88,9 @@ pub async fn chat(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart
 ) -> AppResult<Json<ChatResponse>> {
-    if cfg!(debug_assertions) {
-        dotenv::dotenv()?;
-    }
-    
-    let api_key = env::var("OPENAI_API_KEY")?;
-    let model = env::var("OPENAI_MODEL")?;
-    let client = Client::new();
+    let api_key = &state.openai_key;
+    let model = state.openai_model.to_string();
+    let client = &state.http.clone();
 
     let mut message = String::new();
     let mut image_path: Option<String> = None;
