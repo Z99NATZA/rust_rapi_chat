@@ -7,8 +7,8 @@ use crate::controllers::chat;
 
 pub fn api(state: Arc<AppState>) -> Router {
     let cors = CorsLayer::new()
-        .allow_origin(HeaderValue::from_static("http://localhost:3000"))
-        // .allow_origin(HeaderValue::from_static("https://z99natza.netlify.app"))
+        // .allow_origin(HeaderValue::from_static("http://localhost:3000"))
+        .allow_origin(HeaderValue::from_static("https://znnaichat.netlify.app"))
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
         .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT])
         .allow_credentials(true);

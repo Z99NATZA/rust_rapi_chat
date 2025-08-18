@@ -1,1 +1,39 @@
-docker run -p port:6333 -p port+1:6334 qdrant/qdrant
+--------------------
+--- localhost
+$ docker run -p port:6333 -p port+1:6334 qdrant/qdrant
+--------------------
+
+--------------------
+--- คำสั่ง view จะบอก holder และเวลาหมดอายุของ lease
+$ fly machine leases view 9185069db472e8 -a app-name
+--------------------
+
+--------------------
+--- คำสั่ง clear ใช้ลบ lease ที่ติดอยู่กับเครื่องโดยตรง
+$ fly machine leases clear 9185069db472e8 -a app-name
+--------------------
+
+
+--------------------
+--- deploy
+--------------------
+$ fly apps create qdrant-app-name
+$ fly volumes create qdrant_data --size 10 --region sin --app qdrant-app-name
+
+
+--------------------
+--- เข้า folder qdrant
+--------------------
+$ fly deploy --remote-only
+
+
+--------------------
+--- เช็กสถานะ
+--------------------
+$ fly status -a app-name
+
+
+--------------------
+--- log
+--------------------
+$ fly logs -a app-name

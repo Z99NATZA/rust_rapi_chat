@@ -1,0 +1,33 @@
+--------------------
+--- qdrant
+--------------------
+$ fly apps create qdrant-app-name
+$ fly volumes create qdrant_data --size 10 --region sin --app qdrant-app-name
+$ fly deploy --app qdrant-app-name
+
+--------------------
+--- rust
+--------------------
+$ fly apps craete rust-app-name
+
+
+-----------------
+--- secrets
+-----------------
+$ flyctl secrets set `
+  OPENAI_API_KEY=sk-xxxx `
+  OPENAI_MODEL=gpt-4o `
+  HOST=0.0.0.0 `
+  PORT=8080 `
+  QDRANT_URL="http://qdrant-chatbot.internal:6333" `
+  --app rust-app-name
+
+$ fly deploy --remote-only --app rust-app-name
+
+
+-----------------
+--- กรณีติด cache
+--- ไม่ติด ไม่ต้องรัน
+-----------------
+$ fly deploy --remote-only --no-cache --image-label v$(Get-Date -Format yyyyMMddHHmmss) --app rust-app-name
+$ fly deploy --remote-only --app rust-app-name

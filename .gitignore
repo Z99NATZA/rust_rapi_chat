@@ -4,5 +4,5 @@
 fly.toml
 images/
 data/chat_logs/
-me/note.txt
+me/note
 logs/

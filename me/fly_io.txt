@@ -1,0 +1,19 @@
+-----------------
+--- install
+-----------------
+$ winget install --id=Fly-io.flyctl -e
+
+-----------------
+--- or download zip
+-----------------
+link: https://github.com/superfly/flyctl/releases/tag/v0.3.170
+dowload: flyctl_0.3.170_Windows_x86_64.zip
+
+
+-----------------
+--- สร้าง Volume ให้ Qdrant เก็บข้อมูล
+--- หลังจากรัน [y]
+-----------------
+$ fly volumes create qdrant_data --size 10 --region sin --app qdrant-z99
+
+

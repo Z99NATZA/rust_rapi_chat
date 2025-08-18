@@ -234,8 +234,10 @@ pub async fn chat(
             .map(|choices: &OpenAiResponseChoice| choices.message.content.clone())
             .unwrap_or_else(|| "No response".to_string());
 
-        // ========= BACKGROUND JOB =========
+        // -----------------
+        // BACKGROUND JOB
         // เขียนไฟล์ + upsert Qdrant แบบไม่บล็อกการตอบ
+        // -----------------
         {
             let state = state.clone();
             let session_id_bg = session_id.clone();
@@ -283,7 +285,9 @@ pub async fn chat(
                 }
             });
         }
-        // ========= END BACKGROUND =========
+        // -----------------
+        // BACKGROUND JOB ...End
+        // -----------------
 
         Ok(Json(ChatResponse { reply }))
     } 

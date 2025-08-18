@@ -68,7 +68,7 @@ pub async fn run() -> AppResult<()> {
         openai_key,
         openai_model,
     });
-
+  
     // -----------------------
     // Router + Server
     // -----------------------
